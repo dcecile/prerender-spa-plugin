@@ -12,37 +12,57 @@ function SimpleHtmlPrecompiler (staticDir, paths, options) {
 SimpleHtmlPrecompiler.prototype.apply = function (compiler) {
   var self = this
   compiler.plugin('after-emit', function (compilation, done) {
-    Promise.all(
-      self.paths.map(function (outputPath) {
-        return new Promise(function (resolve, reject) {
-          compileToHTML(self.staticDir, outputPath, self.options, function (prerenderedHTML) {
-            if (self.options.postProcessHtml) {
-              prerenderedHTML = self.options.postProcessHtml({
-                html: prerenderedHTML,
-                route: outputPath
-              })
-            }
-            var folder = Path.join(self.options.outputDir || self.staticDir, outputPath)
-            mkdirp(folder, function (error) {
-              if (error) {
-                return reject('Folder could not be created: ' + folder + '\n' + error)
-              }
-              var file = Path.join(folder, 'index.html')
-              FS.writeFile(
-                file,
-                prerenderedHTML,
-                function (error) {
-                  if (error) {
-                    return reject('Could not write file: ' + file + '\n' + error)
-                  }
-                  resolve()
-                }
-              )
+    function compileOne(outputPath) {
+      return new Promise(function (resolve, reject) {
+        compileToHTML(self.staticDir, outputPath, self.options, function (prerenderedHTML) {
+          if (self.options.postProcessHtml) {
+            prerenderedHTML = self.options.postProcessHtml({
+              html: prerenderedHTML,
+              route: outputPath
             })
+          }
+          var folder = Path.join(self.options.outputDir || self.staticDir, outputPath)
+          mkdirp(folder, function (error) {
+            if (error) {
+              return reject('Folder could not be created: ' + folder + '\n' + error)
+            }
+            var file = Path.join(folder, 'index.html')
+            FS.writeFile(
+              file,
+              prerenderedHTML,
+              function (error) {
+                if (error) {
+                  return reject('Could not write file: ' + file + '\n' + error)
+                }
+                resolve()
+              }
+            )
           })
         })
       })
-    )
+    }
+
+    var superbatch = null
+    var batch = []
+    for (var i = 0; i < self.paths.length; i++) {
+      batch.push(self.paths[i])
+
+      if (batch.length === 4 || i === self.paths.length - 1) {
+        var startBatch = function (batch) {
+          return function () {
+            return Promise.all(batch.map(compileOne))
+          }
+        }
+        if (superbatch) {
+          superbatch = superbatch.then(startBatch(batch))
+        } else {
+          superbatch = startBatch(batch)()
+        }
+        batch = []
+      }
+    }
+
+    superbatch
     .then(function () { done() })
     .catch(function (error) {
       // setTimeout prevents the Promise from swallowing the throw
