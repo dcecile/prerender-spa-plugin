@@ -21,12 +21,13 @@ SimpleHtmlPrecompiler.prototype.apply = function (compiler) {
               route: outputPath
             })
           }
-          var folder = Path.join(self.options.outputDir || self.staticDir, outputPath)
+          var dest = Path.join(self.options.outputDir || self.staticDir, outputPath)
+          var folder = Path.join(dest, '..')
           mkdirp(folder, function (error) {
             if (error) {
               return reject('Folder could not be created: ' + folder + '\n' + error)
             }
-            var file = Path.join(folder, 'index.html')
+            var file = (dest === '/' ? 'index' : dest) + '.html'
             FS.writeFile(
               file,
               prerenderedHTML,
